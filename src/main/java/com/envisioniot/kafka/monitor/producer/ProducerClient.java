@@ -4,29 +4,29 @@ import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.log4j.Logger;
 
-import java.awt.event.KeyListener;
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 /**
  * @author qiang.bi
  * @date 2020/7/1 16:26
  **/
 public class ProducerClient {
-    Logger log = Logger.getLogger(ProducerClient.class);
+    private static Logger log = Logger.getLogger(ProducerClient.class);
 
     private String topicName;
-    private int numPartitions;
-    private int replicationFactor;
     private String broker_address;
-    private  KafkaProducer<String,String> producer;
+    private KafkaProducer<String,String> producer;
 
-    private long startProduceTime;
+    private long endProduceTime;
 
     private void  initConfig(){
         Properties properties = new Properties();
         properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,broker_address);
         properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,StringSerializer.class.getName());
+        properties.put(ProducerConfig.RETRIES_CONFIG,0);
         this.producer = new KafkaProducer<String, String>(properties);
     }
 
@@ -36,36 +36,28 @@ public class ProducerClient {
         initConfig();
     }
 
-    public void sendMessage(String message){
+    public void sendMessage(String message,Integer partition){
         final ProducerRecord<String,String> record = new
-                ProducerRecord<String, String>(topicName,null,
+                ProducerRecord<String, String>(topicName,partition,
                 System.currentTimeMillis(),null,message);
-
-        producer.send(record, new Callback() {
-            public void onCompletion(RecordMetadata recordMetadata, Exception e) {
-                if (null != e){
-                    log.error("send error" + e.getMessage());
-                }else {
-                    System.out.println(record);
-                    startProduceTime = record.timestamp();
-                    log.info("send successfully: record" + record);
-//                    log.info(String.format("offset:%s,partition:%s",recordMetadata.offset(),recordMetadata.partition()));
-                }
-            }
-        });
-        producer.close();
+        log.info("start produce message time:" + record.timestamp());
+        Future<RecordMetadata> future = producer.send(record);
+        producer.flush();
+        try {
+            RecordMetadata recordMetadata = future.get();
+            endProduceTime = System.currentTimeMillis();
+            log.info("endProduceTime : " + endProduceTime);
+        } catch (InterruptedException e) {
+            log.error("send error" + e.getMessage());
+        } catch (ExecutionException e) {
+            log.error("send error" + e.getMessage());
+        }finally {
+            producer.close();
+        }
     }
 
     public void setTopicName(String topicName) {
         this.topicName = topicName;
-    }
-
-    public void setNumPartitions(int numPartitions) {
-        this.numPartitions = numPartitions;
-    }
-
-    public void setReplicationFactor(int replicationFactor) {
-        this.replicationFactor = replicationFactor;
     }
 
     public void setBroker_address(String broker_address) {
@@ -80,14 +72,6 @@ public class ProducerClient {
         return topicName;
     }
 
-    public int getNumPartitions() {
-        return numPartitions;
-    }
-
-    public int getReplicationFactor() {
-        return replicationFactor;
-    }
-
     public String getBroker_address() {
         return broker_address;
     }
@@ -96,7 +80,8 @@ public class ProducerClient {
         return producer;
     }
 
-    public long getStartProduceTime() {
-        return startProduceTime;
+    public long getEndProduceTime() {
+        return endProduceTime;
     }
+
 }
